@@ -60,7 +60,7 @@ export async function ownsProperty(
   propertyId: Id<"properties">,
   operatorId: Id<"operators">,
 ) {
-  const property = await ctx.db.get(propertyId);
+  const property = await ctx.db.get("properties", propertyId);
   if (!property) throw new Error("Property not found.");
   if (property.operatorId !== operatorId) {
     throw new Error("You do not have access to this property.");

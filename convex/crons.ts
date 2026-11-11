@@ -11,4 +11,11 @@ crons.interval(
   {},
 );
 
+crons.daily(
+  "stay reminders",
+  { hourUTC: 7, minuteUTC: 7 },
+  internal.notifications.sendStayReminders,
+  {},
+);
+
 export default crons;

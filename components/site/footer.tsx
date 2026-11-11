@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { InstagramIcon, MailIcon, MessageCircleIcon } from "lucide-react";
+import { AtSignIcon, MailIcon, MessageCircleIcon } from "lucide-react";
 
 import { Brand } from "@/components/brand";
 
@@ -64,7 +64,7 @@ export function SiteFooter() {
                 className="flex size-9 items-center justify-center rounded-full border border-border bg-card text-muted-foreground transition-colors hover:text-foreground"
                 aria-label="Instagram"
               >
-                <InstagramIcon className="size-4" />
+                <AtSignIcon className="size-4" />
               </a>
             </div>
           </div>

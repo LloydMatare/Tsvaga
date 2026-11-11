@@ -1,7 +1,7 @@
 import { httpRouter } from "convex/server";
 
 import { internal } from "./_generated/api";
-import { httpAction } from "./_generated/server";
+import { env, httpAction } from "./_generated/server";
 import { verifyPaynowHash } from "./lib/paynow";
 
 const http = httpRouter();
@@ -18,7 +18,7 @@ http.route({
   path: "/paynow/webhook",
   method: "POST",
   handler: httpAction(async (ctx, req) => {
-    const key = process.env.PAYNOW_INTEGRATION_KEY;
+    const key = env.PAYNOW_INTEGRATION_KEY;
     if (!key) {
       return new Response("Paynow is not configured", { status: 503 });
     }

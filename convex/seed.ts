@@ -810,7 +810,7 @@ export const run = internalMutation({
         });
         ratingSum += review.rating;
       }
-      await ctx.db.patch(propertyId, {
+      await ctx.db.patch("properties", propertyId, {
         reviewCount,
         ratingAvg: Math.round((ratingSum / reviewCount) * 10) / 10,
       });
@@ -830,7 +830,7 @@ export const run = internalMutation({
           )
           .unique();
         if (existingDoc) {
-          await ctx.db.patch(existingDoc._id, {
+          await ctx.db.patch("availability", existingDoc._id, {
             bookedUnits: existingDoc.bookedUnits + 1,
           });
         } else {

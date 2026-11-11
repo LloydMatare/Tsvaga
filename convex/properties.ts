@@ -27,7 +27,7 @@ async function enrich(ctx: DbCtx, properties: Doc<"properties">[]) {
     new Set(properties.map((property) => property.operatorId)),
   );
   const operators = await Promise.all(
-    operatorIds.map((id) => ctx.db.get(id)),
+    operatorIds.map((id) => ctx.db.get("operators", id)),
   );
   const byId = new Map(
     operators
@@ -229,7 +229,7 @@ export const getDetail = query({
 
     if (!property) return null;
 
-    const operator = await ctx.db.get(property.operatorId);
+    const operator = await ctx.db.get("operators", property.operatorId);
     const units = await ctx.db
       .query("units")
       .withIndex("by_property", (q) => q.eq("propertyId", property._id))
@@ -241,7 +241,7 @@ export const getDetail = query({
         .map(async (unit) => {
           const plans = await ctx.db
             .query("ratePlans")
-            .withIndex("by_unit", (q) => q.eq("unitId", unit._id))
+            .withIndex("by_unit_and_active", (q) => q.eq("unitId", unit._id))
             .take(10);
           return {
             ...unit,
@@ -252,8 +252,9 @@ export const getDetail = query({
 
     const reviews = await ctx.db
       .query("reviews")
-      .withIndex("by_property", (q) => q.eq("propertyId", property._id))
-      .filter((q) => q.eq(q.field("status"), "published"))
+      .withIndex("by_property_and_status", (q) =>
+        q.eq("propertyId", property._id).eq("status", "published"),
+      )
       .order("desc")
       .take(8);
 
@@ -275,6 +276,30 @@ export const getDetail = query({
       units: unitsWithPlans,
       reviews,
       isFavorite,
+    };
+  },
+});
+
+export const forOperator = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const operator = await ctx.db
+      .query("operators")
+      .withIndex("by_slug", (q) => q.eq("slug", args.slug))
+      .unique();
+    if (!operator || operator.status !== "active") return null;
+
+    const properties = await ctx.db
+      .query("properties")
+      .withIndex("by_operator", (q) => q.eq("operatorId", operator._id))
+      .take(50);
+    const published = properties.filter(
+      (property) => property.status === "published",
+    );
+
+    return {
+      operator,
+      properties: await enrich(ctx, published),
     };
   },
 });
@@ -307,7 +332,7 @@ export const mine = query({
           units.map(async (unit) => {
             const plans = await ctx.db
               .query("ratePlans")
-              .withIndex("by_unit", (q) => q.eq("unitId", unit._id))
+              .withIndex("by_unit_and_active", (q) => q.eq("unitId", unit._id))
               .take(10);
             return { ...unit, ratePlans: plans };
           }),
@@ -479,7 +504,7 @@ export const update = mutation({
   },
   handler: async (ctx, args) => {
     const { operator } = await requireOperator(ctx);
-    const property = await ctx.db.get(args.propertyId);
+    const property = await ctx.db.get("properties", args.propertyId);
     if (!property) throw new Error("Property not found.");
     if (property.operatorId !== operator._id) {
       throw new Error("You do not have access to this property.");
@@ -520,7 +545,7 @@ export const update = mutation({
       .join(" ")
       .toLowerCase();
 
-    await ctx.db.patch(args.propertyId, patch);
+    await ctx.db.patch("properties", args.propertyId, patch);
     return args.propertyId;
   },
 });
@@ -532,7 +557,7 @@ export const setStatus = mutation({
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewer(ctx);
-    const property = await ctx.db.get(args.propertyId);
+    const property = await ctx.db.get("properties", args.propertyId);
     if (!property) throw new Error("Property not found.");
 
     if (viewer.role !== "admin") {
@@ -542,7 +567,7 @@ export const setStatus = mutation({
       }
     }
 
-    await ctx.db.patch(args.propertyId, { status: args.status });
+    await ctx.db.patch("properties", args.propertyId, { status: args.status });
     return args.propertyId;
   },
 });
@@ -562,9 +587,9 @@ export const updateUnit = mutation({
   },
   handler: async (ctx, args) => {
     const { operator } = await requireOperator(ctx);
-    const unit = await ctx.db.get(args.unitId);
+    const unit = await ctx.db.get("units", args.unitId);
     if (!unit) throw new Error("Unit not found.");
-    const property = await ctx.db.get(unit.propertyId);
+    const property = await ctx.db.get("properties", unit.propertyId);
     if (!property || property.operatorId !== operator._id) {
       throw new Error("You do not have access to this unit.");
     }
@@ -588,7 +613,7 @@ export const updateUnit = mutation({
       patch.totalUnits = Math.max(1, args.totalUnits);
     if (args.status !== undefined) patch.status = args.status;
 
-    await ctx.db.patch(args.unitId, patch);
+    await ctx.db.patch("units", args.unitId, patch);
 
     const units = await ctx.db
       .query("units")
@@ -602,7 +627,7 @@ export const updateUnit = mutation({
           : item.basePriceCents,
       );
     if (prices.length > 0) {
-      await ctx.db.patch(unit.propertyId, {
+      await ctx.db.patch("properties", unit.propertyId, {
         priceFromCents: Math.min(...prices),
       });
     }
@@ -631,11 +656,11 @@ export const updateRatePlan = mutation({
   },
   handler: async (ctx, args) => {
     const { operator } = await requireOperator(ctx);
-    const plan = await ctx.db.get(args.ratePlanId);
+    const plan = await ctx.db.get("ratePlans", args.ratePlanId);
     if (!plan) throw new Error("Rate plan not found.");
-    const unit = await ctx.db.get(plan.unitId);
+    const unit = await ctx.db.get("units", plan.unitId);
     if (!unit) throw new Error("Unit not found.");
-    const property = await ctx.db.get(unit.propertyId);
+    const property = await ctx.db.get("properties", unit.propertyId);
     if (!property || property.operatorId !== operator._id) {
       throw new Error("You do not have access to this rate plan.");
     }
@@ -654,7 +679,7 @@ export const updateRatePlan = mutation({
       patch.cancellationPolicy = args.cancellationPolicy;
     if (args.active !== undefined) patch.active = args.active;
 
-    await ctx.db.patch(args.ratePlanId, patch);
+    await ctx.db.patch("ratePlans", args.ratePlanId, patch);
     return args.ratePlanId;
   },
 });
@@ -670,9 +695,9 @@ export const setAvailabilityRange = mutation({
   },
   handler: async (ctx, args) => {
     const { operator } = await requireOperator(ctx);
-    const unit = await ctx.db.get(args.unitId);
+    const unit = await ctx.db.get("units", args.unitId);
     if (!unit) throw new Error("Unit not found.");
-    const property = await ctx.db.get(unit.propertyId);
+    const property = await ctx.db.get("properties", unit.propertyId);
     if (!property || property.operatorId !== operator._id) {
       throw new Error("You do not have access to this unit.");
     }
@@ -699,7 +724,7 @@ export const setAvailabilityRange = mutation({
         if (args.clearOverride) {
           patch.priceOverrideCents = undefined;
         }
-        await ctx.db.patch(existing._id, patch);
+        await ctx.db.patch("availability", existing._id, patch);
       } else {
         await ctx.db.insert("availability", {
           unitId: unit._id,
@@ -727,7 +752,7 @@ export const adminSetFeatured = mutation({
   },
   handler: async (ctx, args) => {
     await requireAdmin(ctx);
-    await ctx.db.patch(args.propertyId, { featured: args.featured });
+    await ctx.db.patch("properties", args.propertyId, { featured: args.featured });
     return args.propertyId;
   },
 });

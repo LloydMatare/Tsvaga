@@ -7,5 +7,9 @@ export default defineConfig([
   ...nextCoreWebVitals,
   ...nextTypescript,
   ...convexPlugin.configs.recommended,
+  {
+    files: ["convex/auth.config.ts"],
+    rules: { "@convex-dev/no-process-env": "off" },
+  },
   globalIgnores(["convex/_generated"]),
 ]);

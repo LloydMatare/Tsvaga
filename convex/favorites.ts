@@ -15,7 +15,7 @@ export const toggle = mutation({
       .unique();
 
     if (existing) {
-      await ctx.db.delete(existing._id);
+      await ctx.db.delete("favorites", existing._id);
       return { favorited: false };
     }
 
@@ -33,15 +33,15 @@ export const mine = query({
     const viewer = await requireViewer(ctx);
     const favorites = await ctx.db
       .query("favorites")
-      .withIndex("by_user", (q) => q.eq("userId", viewer._id))
+      .withIndex("by_user_and_property", (q) => q.eq("userId", viewer._id))
       .order("desc")
       .take(50);
 
     const properties = await Promise.all(
       favorites.map(async (favorite) => {
-        const property = await ctx.db.get(favorite.propertyId);
+        const property = await ctx.db.get("properties", favorite.propertyId);
         if (!property) return null;
-        const operator = await ctx.db.get(property.operatorId);
+        const operator = await ctx.db.get("operators", property.operatorId);
         return {
           ...property,
           operatorName: operator?.businessName ?? "Tsvaga partner",

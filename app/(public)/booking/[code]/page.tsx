@@ -57,6 +57,10 @@ export default function BookingPage() {
   const code = Array.isArray(params.code) ? params.code[0] : params.code;
   const { isAuthenticated } = useConvexAuth();
   const data = useQuery(api.bookings.getByCode, { code });
+  const notifications = useQuery(
+    api.notifications.forBooking,
+    data ? { bookingId: data.booking._id } : "skip",
+  );
   const cancel = useMutation(api.bookings.cancel);
   const [cancelling, setCancelling] = useState(false);
 
@@ -114,7 +118,7 @@ export default function BookingPage() {
     variant: "muted" as const,
   };
   const canCancel =
-    role === "guest" &&
+    (role === "guest" || role === "admin") &&
     (booking.status === "confirmed" || booking.status === "pending_payment");
   const isPaid = booking.paymentStatus === "paid";
 
@@ -368,11 +372,10 @@ export default function BookingPage() {
                   variant={
                     booking.paymentStatus === "paid"
                       ? "success"
-                      : booking.paymentStatus === "refunded"
+                      : booking.paymentStatus === "refunded" ||
+                          booking.paymentStatus === "partially_refunded"
                         ? "muted"
-                        : booking.paymentStatus === "failed"
-                          ? "destructive"
-                          : "warning"
+                        : "warning"
                   }
                 >
                   {booking.paymentStatus.replace(/_/g, " ")}
@@ -399,10 +402,42 @@ export default function BookingPage() {
               )}
             </div>
 
+            {notifications && notifications.length > 0 && (
+              <div className="mt-4 border-t border-border/70 pt-3">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <MailIcon className="size-3" />
+                  Email updates
+                </p>
+                <ul className="mt-2 space-y-1.5">
+                  {notifications.slice(0, 3).map((notification) => (
+                    <li
+                      key={notification._id}
+                      className="text-[11px] text-muted-foreground"
+                    >
+                      <span className="font-medium text-foreground">
+                        {notification.subject}
+                      </span>
+                      <span className="block">
+                        {notification.status === "sent"
+                          ? notification.sentAt
+                            ? `Sent ${relativeTime(notification.sentAt)}`
+                            : "Sent"
+                          : notification.status === "skipped"
+                            ? "Demo mode — provider not configured"
+                            : notification.status === "failed"
+                              ? "Could not send"
+                              : "Queued"}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             {booking.status === "pending_payment" && (
               <Button asChild className="mt-4 w-full">
                 <Link
-                  href={`/checkout?unit=${booking.unitId}&plan=${booking.ratePlanId}&checkIn=${booking.checkIn}&checkOut=${booking.checkOut}&adults=${booking.adults}&children=${booking.children}`}
+                  href={`/checkout?unit=${booking.unitId}&plan=${booking.ratePlanId}&checkIn=${booking.checkIn}&checkOut=${booking.checkOut}&adults=${booking.adults}&children=${booking.children}&bookingId=${booking._id}&code=${booking.code}`}
                 >
                   Complete payment
                 </Link>

@@ -89,7 +89,7 @@ export const create = mutation({
     });
 
     if (viewer.role === "traveler") {
-      await ctx.db.patch(viewer._id, { role: "operator" });
+      await ctx.db.patch("users", viewer._id, { role: "operator" });
     }
 
     return operatorId;
@@ -124,7 +124,7 @@ export const update = mutation({
     if (args.instantBook !== undefined) patch.instantBook = args.instantBook;
 
     if (Object.keys(patch).length > 0) {
-      await ctx.db.patch(operator._id, patch);
+      await ctx.db.patch("operators", operator._id, patch);
     }
     return operator._id;
   },
@@ -150,9 +150,9 @@ export const claimDemo = mutation({
       throw new Error("No demo operator is available yet. Create your own profile.");
     }
 
-    await ctx.db.patch(demo._id, { ownerUserId: viewer._id });
+    await ctx.db.patch("operators", demo._id, { ownerUserId: viewer._id });
     if (viewer.role === "traveler") {
-      await ctx.db.patch(viewer._id, { role: "operator" });
+      await ctx.db.patch("users", viewer._id, { role: "operator" });
     }
     return demo._id;
   },
@@ -181,9 +181,9 @@ export const setVerification = mutation({
   },
   handler: async (ctx, args) => {
     const admin = await requireAdmin(ctx);
-    const operator = await ctx.db.get(args.operatorId);
+    const operator = await ctx.db.get("operators", args.operatorId);
     if (!operator) throw new Error("Operator not found.");
-    await ctx.db.patch(args.operatorId, {
+    await ctx.db.patch("operators", args.operatorId, {
       verificationStatus: args.verificationStatus,
     });
     await ctx.db.insert("auditLogs", {

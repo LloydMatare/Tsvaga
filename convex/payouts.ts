@@ -85,7 +85,7 @@ export const createBatch = mutation({
   },
   handler: async (ctx, args) => {
     const admin = await requireAdmin(ctx);
-    const operator = await ctx.db.get(args.operatorId);
+    const operator = await ctx.db.get("operators", args.operatorId);
     if (!operator) throw new Error("Operator not found.");
 
     const bookings = await ctx.db
@@ -146,9 +146,9 @@ export const markPaid = mutation({
   },
   handler: async (ctx, args) => {
     const admin = await requireAdmin(ctx);
-    const payout = await ctx.db.get(args.payoutId);
+    const payout = await ctx.db.get("payouts", args.payoutId);
     if (!payout) throw new Error("Payout not found.");
-    await ctx.db.patch(args.payoutId, {
+    await ctx.db.patch("payouts", args.payoutId, {
       status: "paid",
       reference: args.reference.trim(),
       paidAt: Date.now(),

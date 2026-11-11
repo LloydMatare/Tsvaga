@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { useConvexAuth } from "convex/react";
 import {
   ArrowLeftIcon,
@@ -35,6 +35,8 @@ export function CheckoutClient() {
   const { isAuthenticated } = useConvexAuth();
   const viewer = useQuery(api.users.me);
 
+  const existingBookingId = params.get("bookingId") ?? "";
+  const existingCode = params.get("code") ?? "";
   const unitId = params.get("unit") ?? "";
   const ratePlanId = params.get("plan") ?? "";
   const checkIn = params.get("checkIn") ?? "";
@@ -55,27 +57,33 @@ export function CheckoutClient() {
   );
 
   const createBooking = useMutation(api.bookings.create);
-  const initiate = useMutation(api.payments.initiatePaynow);
+  const initiate = useAction(api.payments.initiatePaynow);
   const markDemoPaid = useMutation(api.payments.markDemoPaid);
   const cancelBooking = useMutation(api.bookings.cancel);
 
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
+  const [guest, setGuest] = useState<{
+    name: string;
+    email: string;
+    phone: string;
+  } | null>(null);
+  const name = guest?.name ?? viewer?.name ?? "";
+  const email = guest?.email ?? viewer?.email ?? "";
+  const phone = guest?.phone ?? viewer?.phone ?? "";
   const [requests, setRequests] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [booking, setBooking] = useState<{
     id: Id<"bookings">;
     code: string;
-  } | null>(null);
+  } | null>(
+    existingBookingId
+      ? { id: existingBookingId as Id<"bookings">, code: existingCode }
+      : null,
+  );
   const [demoReference, setDemoReference] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!viewer) return;
-    setName((value) => value || viewer.name || "");
-    setEmail((value) => value || viewer.email || "");
-    setPhone((value) => value || viewer.phone || "");
-  }, [viewer]);
+  function updateGuest(patch: Partial<{ name: string; email: string; phone: string }>) {
+    setGuest({ name, email, phone, ...patch });
+  }
 
   const nights = useMemo(
     () => (checkIn && checkOut ? nightsBetween(checkIn, checkOut) : 0),
@@ -277,7 +285,7 @@ export function CheckoutClient() {
                 <Input
                   id="guest-name"
                   value={name}
-                  onChange={(event) => setName(event.target.value)}
+                  onChange={(event) => updateGuest({ name: event.target.value })}
                   placeholder="Tendai Moyo"
                   autoComplete="name"
                 />
@@ -288,7 +296,7 @@ export function CheckoutClient() {
                   id="guest-email"
                   type="email"
                   value={email}
-                  onChange={(event) => setEmail(event.target.value)}
+                  onChange={(event) => updateGuest({ email: event.target.value })}
                   placeholder="you@example.com"
                   autoComplete="email"
                 />
@@ -298,7 +306,7 @@ export function CheckoutClient() {
                 <Input
                   id="guest-phone"
                   value={phone}
-                  onChange={(event) => setPhone(event.target.value)}
+                  onChange={(event) => updateGuest({ phone: event.target.value })}
                   placeholder="+263 77 123 4567"
                   autoComplete="tel"
                 />

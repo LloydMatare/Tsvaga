@@ -42,7 +42,7 @@ export const sync = mutation({
         patch.avatarUrl = identity.pictureUrl;
       }
       if (Object.keys(patch).length > 0) {
-        await ctx.db.patch(existing._id, patch);
+        await ctx.db.patch("users", existing._id, patch);
       }
       return existing._id;
     }
@@ -68,7 +68,7 @@ export const updateProfile = mutation({
     if (args.name && args.name.trim().length > 1) patch.name = args.name.trim();
     if (args.phone !== undefined) patch.phone = args.phone.trim();
     if (Object.keys(patch).length > 0) {
-      await ctx.db.patch(viewer._id, patch);
+      await ctx.db.patch("users", viewer._id, patch);
     }
     return viewer._id;
   },
@@ -103,11 +103,11 @@ export const bootstrapAdmin = mutation({
         avatarUrl: identity.pictureUrl ?? undefined,
         role: "traveler",
       });
-      user = await ctx.db.get(id);
+      user = await ctx.db.get("users", id);
     }
 
     if (!user) throw new Error("Could not create the admin profile.");
-    await ctx.db.patch(user._id, { role: "admin" });
+    await ctx.db.patch("users", user._id, { role: "admin" });
     return user._id;
   },
 });

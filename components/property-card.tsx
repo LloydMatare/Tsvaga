@@ -60,7 +60,7 @@ export function PropertyCard({
       )}
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
-        <Link href={href} aria-label={`View ${property.name}`}>
+        <Link href={href} aria-label={`View ${property.name}`} className="absolute inset-0">
           <Image
             src={property.coverImage}
             alt={property.name}

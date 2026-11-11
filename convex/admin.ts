@@ -68,7 +68,7 @@ export const properties = query({
     const properties = await ctx.db.query("properties").order("desc").take(100);
     return await Promise.all(
       properties.map(async (property) => {
-        const operator = await ctx.db.get(property.operatorId);
+        const operator = await ctx.db.get("operators", property.operatorId);
         return {
           ...property,
           operatorName: operator?.businessName ?? "Unknown",
@@ -86,7 +86,7 @@ export const bookings = query({
     const bookings = await ctx.db.query("bookings").order("desc").take(100);
     return await Promise.all(
       bookings.map(async (booking) => {
-        const property = await ctx.db.get(booking.propertyId);
+        const property = await ctx.db.get("properties", booking.propertyId);
         return {
           ...booking,
           propertyName: property?.name ?? "Property",
@@ -107,7 +107,7 @@ export const setUserRole = mutation({
   },
   handler: async (ctx, args) => {
     const admin = await requireAdmin(ctx);
-    await ctx.db.patch(args.userId, { role: args.role });
+    await ctx.db.patch("users", args.userId, { role: args.role });
     await ctx.db.insert("auditLogs", {
       actorUserId: admin._id,
       action: "user.role",

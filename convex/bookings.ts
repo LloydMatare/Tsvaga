@@ -10,7 +10,14 @@ import {
 } from "./_generated/server";
 import { bookingStatusValidator } from "./schema";
 import { getViewer, requireOperator, requireViewer } from "./lib/auth";
-import { dateRange, isValidISODate, nightsBetween } from "./lib/dates";
+import {
+  notifyBookingCancelled,
+  notifyBookingExpired,
+  notifyBookingConfirmed,
+  notifyBookingReceived,
+} from "./lib/bookingNotify";
+import { dateRange, isValidISODate } from "./lib/dates";
+import { releaseInventory } from "./lib/inventory";
 import { bookingCode } from "./lib/slug";
 import { getStayQuote } from "./lib/stay";
 
@@ -35,7 +42,7 @@ async function reserveInventory(
       if (existing.closed || existing.bookedUnits + 1 > total) {
         throw new Error(`Sorry, ${date} is no longer available.`);
       }
-      await ctx.db.patch(existing._id, {
+      await ctx.db.patch("availability", existing._id, {
         bookedUnits: existing.bookedUnits + 1,
       });
     } else {
@@ -53,25 +60,6 @@ async function reserveInventory(
   }
 }
 
-async function releaseInventory(
-  ctx: MutationCtx,
-  booking: Doc<"bookings">,
-) {
-  for (const date of dateRange(booking.checkIn, booking.checkOut)) {
-    const existing = await ctx.db
-      .query("availability")
-      .withIndex("by_unit_and_date", (q) =>
-        q.eq("unitId", booking.unitId).eq("date", date),
-      )
-      .unique();
-    if (existing && existing.bookedUnits > 0) {
-      await ctx.db.patch(existing._id, {
-        bookedUnits: existing.bookedUnits - 1,
-      });
-    }
-  }
-}
-
 export const quote = query({
   args: {
     unitId: v.id("units"),
@@ -80,13 +68,13 @@ export const quote = query({
     checkOut: v.string(),
   },
   handler: async (ctx, args) => {
-    const unit = await ctx.db.get(args.unitId);
-    const plan = await ctx.db.get(args.ratePlanId);
+    const unit = await ctx.db.get("units", args.unitId);
+    const plan = await ctx.db.get("ratePlans", args.ratePlanId);
     if (!unit || !plan || plan.unitId !== unit._id) {
       return null;
     }
-    const property = await ctx.db.get(unit.propertyId);
-    const operator = property ? await ctx.db.get(property.operatorId) : null;
+    const property = await ctx.db.get("properties", unit.propertyId);
+    const operator = property ? await ctx.db.get("operators", property.operatorId) : null;
     const stay = await getStayQuote(ctx, unit, plan, args.checkIn, args.checkOut);
     return { unit, plan, stay, property, operator };
   },
@@ -112,17 +100,17 @@ export const create = mutation({
       throw new Error("Choose valid dates.");
     }
 
-    const unit = await ctx.db.get(args.unitId);
+    const unit = await ctx.db.get("units", args.unitId);
     if (!unit) throw new Error("Room not found.");
-    const plan = await ctx.db.get(args.ratePlanId);
+    const plan = await ctx.db.get("ratePlans", args.ratePlanId);
     if (!plan || plan.unitId !== unit._id || !plan.active) {
       throw new Error("Rate plan is not available.");
     }
-    const property = await ctx.db.get(unit.propertyId);
+    const property = await ctx.db.get("properties", unit.propertyId);
     if (!property || property.status !== "published") {
       throw new Error("This property is not accepting bookings.");
     }
-    const operator = await ctx.db.get(property.operatorId);
+    const operator = await ctx.db.get("operators", property.operatorId);
     if (!operator || operator.status !== "active") {
       throw new Error("This property is not accepting bookings.");
     }
@@ -154,6 +142,28 @@ export const create = mutation({
     );
     if (!stay.available) {
       throw new Error(stay.reason);
+    }
+
+    const sameStay = await ctx.db
+      .query("bookings")
+      .withIndex("by_unit_and_checkIn", (q) =>
+        q.eq("unitId", unit._id).eq("checkIn", args.checkIn),
+      )
+      .take(20);
+    const existingPending = sameStay.find(
+      (booking) =>
+        booking.guestUserId === viewer._id &&
+        booking.checkOut === args.checkOut &&
+        booking.status === "pending_payment" &&
+        booking._creationTime > Date.now() - 30 * 60 * 1000,
+    );
+    if (existingPending) {
+      return {
+        bookingId: existingPending._id,
+        code: existingPending.code,
+        totalCents: existingPending.totalCents,
+        nights: existingPending.nights,
+      };
     }
 
     await reserveInventory(ctx, unit, args.checkIn, args.checkOut);
@@ -210,6 +220,8 @@ export const create = mutation({
       metadata: code,
     });
 
+    await notifyBookingReceived(ctx, bookingId);
+
     return {
       bookingId,
       code,
@@ -233,8 +245,8 @@ export const mine = query({
 
     return await Promise.all(
       bookings.map(async (booking) => {
-        const property = await ctx.db.get(booking.propertyId);
-        const unit = await ctx.db.get(booking.unitId);
+        const property = await ctx.db.get("properties", booking.propertyId);
+        const unit = await ctx.db.get("units", booking.unitId);
         const review = await ctx.db
           .query("reviews")
           .withIndex("by_booking", (q) => q.eq("bookingId", booking._id))
@@ -266,10 +278,10 @@ export const getByCode = query({
       .unique();
     if (!booking) return null;
 
-    const property = await ctx.db.get(booking.propertyId);
-    const unit = await ctx.db.get(booking.unitId);
-    const plan = await ctx.db.get(booking.ratePlanId);
-    const operator = await ctx.db.get(booking.operatorId);
+    const property = await ctx.db.get("properties", booking.propertyId);
+    const unit = await ctx.db.get("units", booking.unitId);
+    const plan = await ctx.db.get("ratePlans", booking.ratePlanId);
+    const operator = await ctx.db.get("operators", booking.operatorId);
     const payment = await ctx.db
       .query("payments")
       .withIndex("by_booking", (q) => q.eq("bookingId", booking._id))
@@ -317,8 +329,8 @@ export const operatorList = query({
 
     return await Promise.all(
       bookings.map(async (booking) => {
-        const property = await ctx.db.get(booking.propertyId);
-        const unit = await ctx.db.get(booking.unitId);
+        const property = await ctx.db.get("properties", booking.propertyId);
+        const unit = await ctx.db.get("units", booking.unitId);
         return {
           ...booking,
           propertyName: property?.name ?? "Property",
@@ -395,7 +407,7 @@ export const updateStatus = mutation({
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewer(ctx);
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
 
     if (viewer.role !== "admin") {
@@ -412,7 +424,7 @@ export const updateStatus = mutation({
       await releaseInventory(ctx, booking);
     }
 
-    await ctx.db.patch(args.bookingId, {
+    await ctx.db.patch("bookings", args.bookingId, {
       status: args.status,
       cancelledAt: RELEASED_STATUSES.has(args.status)
         ? Date.now()
@@ -422,6 +434,17 @@ export const updateStatus = mutation({
           ? "refunded"
           : booking.paymentStatus,
     });
+
+    if (
+      RELEASED_STATUSES.has(args.status) &&
+      !RELEASED_STATUSES.has(booking.status)
+    ) {
+      await notifyBookingCancelled(
+        ctx,
+        args.bookingId,
+        `Booking ${args.status} by ${viewer.role === "admin" ? "Tsvaga" : "the host"}`,
+      );
+    }
 
     return args.bookingId;
   },
@@ -434,7 +457,7 @@ export const cancel = mutation({
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewer(ctx);
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
     if (booking.guestUserId !== viewer._id && viewer.role !== "admin") {
       throw new Error("You can only cancel your own booking.");
@@ -451,12 +474,18 @@ export const cancel = mutation({
     }
 
     await releaseInventory(ctx, booking);
-    await ctx.db.patch(args.bookingId, {
+    await ctx.db.patch("bookings", args.bookingId, {
       status: "cancelled",
       cancelledAt: Date.now(),
       cancelledReason: args.reason?.trim() || "Cancelled by guest",
       paymentStatus: booking.paymentStatus === "paid" ? "refunded" : "unpaid",
     });
+
+    await notifyBookingCancelled(
+      ctx,
+      args.bookingId,
+      args.reason?.trim() || "Cancelled by guest",
+    );
 
     return args.bookingId;
   },
@@ -476,13 +505,13 @@ export const getForPayment = internalQuery({
       .unique();
     if (!user) throw new Error("Signed-in user not found.");
 
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
     if (booking.guestUserId !== user._id && user.role !== "admin") {
       throw new Error("You do not have access to this booking.");
     }
 
-    const property = await ctx.db.get(booking.propertyId);
+    const property = await ctx.db.get("properties", booking.propertyId);
     return { booking, property };
   },
 });
@@ -493,15 +522,16 @@ export const confirmPaid = internalMutation({
     paynowReference: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
     if (booking.paymentStatus === "paid") return booking._id;
 
-    await ctx.db.patch(args.bookingId, {
+    await ctx.db.patch("bookings", args.bookingId, {
       status: "confirmed",
       paymentStatus: "paid",
       confirmedAt: Date.now(),
     });
+    await notifyBookingConfirmed(ctx, args.bookingId);
     return args.bookingId;
   },
 });
@@ -532,11 +562,12 @@ export const expirePending = internalMutation({
       if (paymentInFlight) continue;
 
       await releaseInventory(ctx, booking);
-      await ctx.db.patch(booking._id, {
+      await ctx.db.patch("bookings", booking._id, {
         status: "expired",
         cancelledAt: Date.now(),
         cancelledReason: "Payment was not completed in time",
       });
+      await notifyBookingExpired(ctx, booking._id);
       expired += 1;
     }
     return { expired };

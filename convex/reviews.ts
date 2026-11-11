@@ -8,8 +8,9 @@ export const forProperty = query({
   handler: async (ctx, args) => {
     return await ctx.db
       .query("reviews")
-      .withIndex("by_property", (q) => q.eq("propertyId", args.propertyId))
-      .filter((q) => q.eq(q.field("status"), "published"))
+      .withIndex("by_property_and_status", (q) =>
+        q.eq("propertyId", args.propertyId).eq("status", "published"),
+      )
       .order("desc")
       .take(20);
   },
@@ -24,7 +25,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const viewer = await requireViewer(ctx);
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
     if (booking.guestUserId !== viewer._id) {
       throw new Error("You can only review your own stay.");
@@ -54,7 +55,7 @@ export const create = mutation({
 
     const reviews = await ctx.db
       .query("reviews")
-      .withIndex("by_property", (q) => q.eq("propertyId", booking.propertyId))
+      .withIndex("by_property_and_status", (q) => q.eq("propertyId", booking.propertyId))
       .take(200);
     const published = reviews.filter((review) => review.status === "published");
     const average =
@@ -63,7 +64,7 @@ export const create = mutation({
           published.length
         : 0;
 
-    await ctx.db.patch(booking.propertyId, {
+    await ctx.db.patch("properties", booking.propertyId, {
       ratingAvg: Math.round(average * 10) / 10,
       reviewCount: published.length,
     });
@@ -79,13 +80,13 @@ export const respond = mutation({
   },
   handler: async (ctx, args) => {
     const { operator } = await requireOperator(ctx);
-    const review = await ctx.db.get(args.reviewId);
+    const review = await ctx.db.get("reviews", args.reviewId);
     if (!review) throw new Error("Review not found.");
-    const property = await ctx.db.get(review.propertyId);
+    const property = await ctx.db.get("properties", review.propertyId);
     if (!property || property.operatorId !== operator._id) {
       throw new Error("You do not have access to this review.");
     }
-    await ctx.db.patch(args.reviewId, {
+    await ctx.db.patch("reviews", args.reviewId, {
       ownerResponse: args.response.trim(),
     });
     return args.reviewId;

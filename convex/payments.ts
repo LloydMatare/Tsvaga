@@ -3,11 +3,17 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {
   action,
+  env,
   internalMutation,
   mutation,
   query,
 } from "./_generated/server";
 import { requireViewer } from "./lib/auth";
+import {
+  notifyBookingCancelled,
+  notifyBookingConfirmed,
+} from "./lib/bookingNotify";
+import { releaseInventory } from "./lib/inventory";
 import {
   paynowHash,
   parsePaynowResponse,
@@ -46,13 +52,11 @@ export const initiatePaynow = action({
       .toString(36)
       .toUpperCase()}`;
 
-    const integrationId = process.env.PAYNOW_INTEGRATION_ID;
-    const integrationKey = process.env.PAYNOW_INTEGRATION_KEY;
-    const siteUrl = process.env.SITE_URL ?? "http://localhost:3000";
+    const integrationId = env.PAYNOW_INTEGRATION_ID;
+    const integrationKey = env.PAYNOW_INTEGRATION_KEY;
+    const siteUrl = env.SITE_URL ?? "http://localhost:3000";
     const convexSiteUrl =
-      process.env.CONVEX_SITE_URL ??
-      process.env.NEXT_PUBLIC_CONVEX_SITE_URL ??
-      "http://127.0.0.1:3211";
+      env.CONVEX_SITE_URL ?? env.NEXT_PUBLIC_CONVEX_SITE_URL;
 
     if (!integrationId || !integrationKey) {
       await ctx.runMutation(internal.payments.recordInitiation, {
@@ -147,7 +151,7 @@ export const recordInitiation = internalMutation({
       .take(10);
     for (const payment of previous) {
       if (payment.status === "initiated") {
-        await ctx.db.patch(payment._id, { status: "cancelled" });
+        await ctx.db.patch("payments", payment._id, { status: "cancelled" });
       }
     }
 
@@ -182,28 +186,28 @@ export const confirmFromPaynow = internalMutation({
       return { ok: true, alreadyPaid: true };
     }
 
-    const booking = await ctx.db.get(payment.bookingId);
+    const booking = await ctx.db.get("bookings", payment.bookingId);
     if (!booking) throw new Error("Booking not found.");
 
     if (
       args.amountCents !== undefined &&
       Math.abs(args.amountCents - booking.totalCents) > 1
     ) {
-      await ctx.db.patch(payment._id, {
+      await ctx.db.patch("payments", payment._id, {
         status: "failed",
         failureReason: "Amount mismatch",
       });
       throw new Error("Payment amount does not match the booking total.");
     }
 
-    await ctx.db.patch(payment._id, {
+    await ctx.db.patch("payments", payment._id, {
       status: "paid",
       paynowReference: args.paynowReference,
       paidAt: Date.now(),
       hashVerified: true,
     });
 
-    await ctx.db.patch(booking._id, {
+    await ctx.db.patch("bookings", booking._id, {
       status: "confirmed",
       paymentStatus: "paid",
       confirmedAt: Date.now(),
@@ -215,6 +219,8 @@ export const confirmFromPaynow = internalMutation({
       targetId: booking._id,
       metadata: args.paynowReference ?? args.reference,
     });
+
+    await notifyBookingConfirmed(ctx, booking._id);
 
     return { ok: true, alreadyPaid: false };
   },
@@ -231,7 +237,7 @@ export const recordFailure = internalMutation({
       .withIndex("by_reference", (q) => q.eq("reference", args.reference))
       .unique();
     if (!payment || payment.status === "paid") return;
-    await ctx.db.patch(payment._id, {
+    await ctx.db.patch("payments", payment._id, {
       status: "failed",
       failureReason: args.reason,
     });
@@ -241,11 +247,11 @@ export const recordFailure = internalMutation({
 export const markDemoPaid = mutation({
   args: { bookingId: v.id("bookings") },
   handler: async (ctx, args) => {
-    if (process.env.PAYNOW_INTEGRATION_ID) {
+    if (env.PAYNOW_INTEGRATION_ID) {
       throw new Error("Demo payments are disabled once Paynow is configured.");
     }
     const viewer = await requireViewer(ctx);
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
     if (booking.guestUserId !== viewer._id && viewer.role !== "admin") {
       throw new Error("You do not have access to this booking.");
@@ -262,7 +268,7 @@ export const markDemoPaid = mutation({
       .first();
 
     if (existing) {
-      await ctx.db.patch(existing._id, {
+      await ctx.db.patch("payments", existing._id, {
         status: "paid",
         paidAt: Date.now(),
         hashVerified: false,
@@ -281,11 +287,13 @@ export const markDemoPaid = mutation({
       });
     }
 
-    await ctx.db.patch(booking._id, {
+    await ctx.db.patch("bookings", booking._id, {
       status: "confirmed",
       paymentStatus: "paid",
       confirmedAt: Date.now(),
     });
+
+    await notifyBookingConfirmed(ctx, booking._id);
 
     return booking._id;
   },
@@ -295,7 +303,7 @@ export const forBooking = query({
   args: { bookingId: v.id("bookings") },
   handler: async (ctx, args) => {
     const viewer = await requireViewer(ctx);
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) return null;
     if (booking.guestUserId !== viewer._id && viewer.role !== "admin") {
       return null;
@@ -318,10 +326,14 @@ export const refund = mutation({
     if (viewer.role !== "admin") {
       throw new Error("Only an admin can issue a refund.");
     }
-    const booking = await ctx.db.get(args.bookingId);
+    const booking = await ctx.db.get("bookings", args.bookingId);
     if (!booking) throw new Error("Booking not found.");
 
-    await ctx.db.patch(args.bookingId, {
+    if (!["cancelled", "declined", "expired"].includes(booking.status)) {
+      await releaseInventory(ctx, booking);
+    }
+
+    await ctx.db.patch("bookings", args.bookingId, {
       paymentStatus: "refunded",
       status: "cancelled",
       cancelledAt: Date.now(),
@@ -334,7 +346,7 @@ export const refund = mutation({
       .take(10);
     for (const payment of payments) {
       if (payment.status === "paid") {
-        await ctx.db.patch(payment._id, { status: "cancelled" });
+        await ctx.db.patch("payments", payment._id, { status: "cancelled" });
       }
     }
 
@@ -345,6 +357,12 @@ export const refund = mutation({
       targetId: args.bookingId,
       metadata: args.note,
     });
+
+    await notifyBookingCancelled(
+      ctx,
+      args.bookingId,
+      args.note ?? "Refunded by Tsvaga",
+    );
 
     return args.bookingId;
   },

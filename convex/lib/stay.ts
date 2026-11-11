@@ -90,8 +90,9 @@ export async function firstActivePlan(
 ) {
   return await ctx.db
     .query("ratePlans")
-    .withIndex("by_unit", (q) => q.eq("unitId", unitId))
-    .filter((q) => q.eq(q.field("active"), true))
+    .withIndex("by_unit_and_active", (q) =>
+      q.eq("unitId", unitId).eq("active", true),
+    )
     .first();
 }
 
@@ -101,8 +102,9 @@ export async function cheapestPlan(
 ) {
   const plans = await ctx.db
     .query("ratePlans")
-    .withIndex("by_unit", (q) => q.eq("unitId", unitId))
-    .filter((q) => q.eq(q.field("active"), true))
+    .withIndex("by_unit_and_active", (q) =>
+      q.eq("unitId", unitId).eq("active", true),
+    )
     .take(10);
   if (plans.length === 0) return null;
   return plans.reduce((best, plan) =>

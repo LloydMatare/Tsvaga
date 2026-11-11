@@ -52,6 +52,23 @@ export const verificationStatusValidator = v.union(
   v.literal("rejected"),
 );
 
+export const notificationTypeValidator = v.union(
+  v.literal("booking_received"),
+  v.literal("booking_confirmed"),
+  v.literal("booking_cancelled"),
+  v.literal("booking_expired"),
+  v.literal("operator_new_booking"),
+  v.literal("stay_reminder"),
+);
+
+export const notificationStatusValidator = v.union(
+  v.literal("queued"),
+  v.literal("sending"),
+  v.literal("sent"),
+  v.literal("skipped"),
+  v.literal("failed"),
+);
+
 export default defineSchema({
   users: defineTable({
     tokenIdentifier: v.string(),
@@ -152,7 +169,7 @@ export default defineSchema({
     refundable: v.boolean(),
     cancellationPolicy: v.string(),
     active: v.boolean(),
-  }).index("by_unit", ["unitId"]),
+  }).index("by_unit_and_active", ["unitId", "active"]),
 
   availability: defineTable({
     unitId: v.id("units"),
@@ -255,7 +272,7 @@ export default defineSchema({
     ownerResponse: v.optional(v.string()),
     status: v.union(v.literal("published"), v.literal("hidden")),
   })
-    .index("by_property", ["propertyId"])
+    .index("by_property_and_status", ["propertyId", "status"])
     .index("by_booking", ["bookingId"])
     .index("by_status", ["status"]),
 
@@ -263,8 +280,26 @@ export default defineSchema({
     userId: v.id("users"),
     propertyId: v.id("properties"),
   })
-    .index("by_user", ["userId"])
     .index("by_user_and_property", ["userId", "propertyId"]),
+
+  notifications: defineTable({
+    userId: v.optional(v.id("users")),
+    bookingId: v.optional(v.id("bookings")),
+    type: notificationTypeValidator,
+    channel: v.literal("email"),
+    recipient: v.string(),
+    subject: v.string(),
+    body: v.string(),
+    status: notificationStatusValidator,
+    provider: v.optional(v.string()),
+    providerId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    sentAt: v.optional(v.number()),
+  })
+    .index("by_booking_and_type", ["bookingId", "type"])
+    .index("by_status", ["status"])
+    .index("by_recipient", ["recipient"])
+    .index("by_user", ["userId"]),
 
   auditLogs: defineTable({
     actorUserId: v.optional(v.id("users")),

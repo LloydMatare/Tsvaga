@@ -11,7 +11,7 @@ export const calendar = query({
     to: v.string(),
   },
   handler: async (ctx, args) => {
-    const unit = await ctx.db.get(args.unitId);
+    const unit = await ctx.db.get("units", args.unitId);
     if (!unit) return null;
 
     const plan = await cheapestPlan(ctx, unit._id);
