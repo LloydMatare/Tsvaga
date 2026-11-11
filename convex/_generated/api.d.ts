@@ -21,6 +21,7 @@ import type * as lib_emailTemplates from "../lib/emailTemplates.js";
 import type * as lib_inventory from "../lib/inventory.js";
 import type * as lib_notify from "../lib/notify.js";
 import type * as lib_paynow from "../lib/paynow.js";
+import type * as lib_seedStayDetails from "../lib/seedStayDetails.js";
 import type * as lib_slug from "../lib/slug.js";
 import type * as lib_stay from "../lib/stay.js";
 import type * as notifications from "../notifications.js";
@@ -52,6 +53,7 @@ declare const fullApi: ApiFromModules<{
   "lib/inventory": typeof lib_inventory;
   "lib/notify": typeof lib_notify;
   "lib/paynow": typeof lib_paynow;
+  "lib/seedStayDetails": typeof lib_seedStayDetails;
   "lib/slug": typeof lib_slug;
   "lib/stay": typeof lib_stay;
   notifications: typeof notifications;

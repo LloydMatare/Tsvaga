@@ -1,6 +1,8 @@
 import { internalMutation } from "./_generated/server";
+import { v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import { addDaysISO, dateRange, todayISO } from "./lib/dates";
+import { demoStayPolicies, seedStayDetails } from "./lib/seedStayDetails";
 
 const IMG = (id: string) =>
   `https://images.unsplash.com/${id}?auto=format&fit=crop&w=1600&q=80`;
@@ -91,7 +93,7 @@ const commonAmenities = [
   "Breakfast",
 ];
 
-const propertiesData: SeedProperty[] = [
+const demoPropertiesData: SeedProperty[] = [
   {
     name: "Pamusha Lodge",
     slug: "pamusha-lodge-victoria-falls",
@@ -551,6 +553,83 @@ const propertiesData: SeedProperty[] = [
   },
 ];
 
+const propertiesData: SeedProperty[] = demoPropertiesData.map((property) => {
+  const sourced = seedStayDetails[property.slug];
+  if (!sourced) return property;
+  const { sourceUrl, ...details } = sourced;
+  return {
+    ...property,
+    ...details,
+    description: `${details.description}\n\nProperty information source: ${sourceUrl}`,
+  };
+});
+
+// Refresh only the demo-owned listings. Preserve IDs, slugs, rates, availability,
+// reviews and bookings, and never overwrite a real operator's matching listing.
+export const refreshStayDetails = internalMutation({
+  args: {},
+  returns: v.object({
+    updated: v.number(),
+    missing: v.array(v.string()),
+    skipped: v.array(v.string()),
+  }),
+  handler: async (ctx) => {
+    let updated = 0;
+    const missing: string[] = [];
+    const skipped: string[] = [];
+    for (const property of propertiesData) {
+      if (!seedStayDetails[property.slug]) continue;
+      const existing = await ctx.db
+        .query("properties")
+        .withIndex("by_slug", (q) => q.eq("slug", property.slug))
+        .unique();
+      if (!existing) {
+        missing.push(property.slug);
+        continue;
+      }
+      const operator = await ctx.db.get("operators", existing.operatorId);
+      const owner = operator
+        ? await ctx.db.get("users", operator.ownerUserId)
+        : null;
+      const expectedOwner = operatorSeeds[property.operatorIndex].ownerKey;
+      if (owner?.tokenIdentifier !== `seed|${expectedOwner}`) {
+        skipped.push(property.slug);
+        continue;
+      }
+      await ctx.db.patch("properties", existing._id, {
+        name: property.name,
+        city: property.city,
+        region: property.region,
+        address: property.address,
+        propertyType: property.propertyType,
+        summary: property.summary,
+        description: property.description,
+        amenities: property.amenities,
+        images: property.images,
+        coverImage: property.images[0],
+        policies: demoStayPolicies,
+        searchText: propertySearchText(property),
+      });
+      updated += 1;
+    }
+    return { updated, missing, skipped };
+  },
+});
+
+function propertySearchText(property: SeedProperty) {
+  return [
+    property.name,
+    property.summary,
+    property.description,
+    property.city,
+    property.region,
+    property.propertyType,
+    ...property.amenities,
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
 const reviewPool = [
   {
     guestName: "Tariro M.",
@@ -647,10 +726,20 @@ const operatorSeeds = [
 
 export const run = internalMutation({
   args: {},
+  returns: v.union(
+    v.object({ skipped: v.literal(true), reason: v.string() }),
+    v.object({
+      skipped: v.literal(false),
+      properties: v.number(),
+      operators: v.number(),
+      reviews: v.string(),
+      bookings: v.number(),
+    }),
+  ),
   handler: async (ctx) => {
     const existing = await ctx.db.query("properties").take(1);
     if (existing.length > 0) {
-      return { skipped: true, reason: "Data already exists" };
+      return { skipped: true as const, reason: "Data already exists" };
     }
 
     const travelerId = await ctx.db.insert("users", {
@@ -703,17 +792,7 @@ export const run = internalMutation({
       const minPrice = Math.min(
         ...property.units.map((unit) => unit.priceCents),
       );
-      const searchText = [
-        property.name,
-        property.summary,
-        property.description,
-        property.city,
-        property.region,
-        property.propertyType,
-        ...property.amenities,
-      ]
-        .join(" ")
-        .toLowerCase();
+      const searchText = propertySearchText(property);
 
       const propertyId = await ctx.db.insert("properties", {
         operatorId,
@@ -730,8 +809,7 @@ export const run = internalMutation({
         coverImage: property.images[0],
         checkInTime: "14:00",
         checkOutTime: "10:00",
-        policies:
-          "Rates are in USD. Valid ID required at check-in. Children under 2 stay free in a cot.",
+        policies: demoStayPolicies,
         houseRules: [
           "No smoking indoors",
           "No parties without prior approval",
@@ -911,7 +989,7 @@ export const run = internalMutation({
     }
 
     return {
-      skipped: false,
+      skipped: false as const,
       properties: created.length,
       operators: operatorIds.length,
       reviews: "seeded",
