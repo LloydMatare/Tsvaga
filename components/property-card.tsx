@@ -29,6 +29,7 @@ export type PropertyCardData = {
   liveTotalCents?: number | null;
   operatorName?: string;
   operatorVerified?: boolean;
+  policies?: string;
 };
 
 export function PropertyCard({
@@ -45,6 +46,7 @@ export function PropertyCard({
   className?: string;
 }) {
   const price = property.livePriceFromCents ?? property.priceFromCents;
+  const isDemo = property.policies?.startsWith("Demo booking data:") ?? false;
   const nights =
     checkIn && checkOut ? Math.max(nightsBetween(checkIn, checkOut), 1) : 0;
   const href =
@@ -104,7 +106,10 @@ export function PropertyCard({
               {property.region ? ` · ${property.region}` : ""}
             </p>
           </div>
-          <Stars rating={property.ratingAvg} count={property.reviewCount} />
+          <div className="text-right">
+            <Stars rating={property.ratingAvg} count={property.reviewCount} />
+            {isDemo && <p className="mt-1 text-[10px] text-muted-foreground">Demo reviews</p>}
+          </div>
         </div>
 
         <p className="line-clamp-2 text-sm leading-relaxed text-muted-foreground">
@@ -113,6 +118,7 @@ export function PropertyCard({
 
         <div className="mt-auto flex items-end justify-between gap-3 border-t border-border/60 pt-3">
           <div>
+            {isDemo && <p className="mb-1 text-[10px] text-muted-foreground">Demo rate</p>}
             <p className="text-lg font-semibold leading-none">
               {formatUsd(price)}
               <span className="text-xs font-normal text-muted-foreground">

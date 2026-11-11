@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { sourceInfoValidator } from "./lib/staySourceSchema";
 
 export const roleValidator = v.union(
   v.literal("traveler"),
@@ -134,6 +135,7 @@ export default defineSchema({
     featured: v.boolean(),
     status: propertyStatusValidator,
     searchText: v.string(),
+    sourceInfo: v.optional(sourceInfoValidator),
   })
     .index("by_operator", ["operatorId"])
     .index("by_slug", ["slug"])

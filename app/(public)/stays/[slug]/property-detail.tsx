@@ -24,6 +24,7 @@ import {
 import { api } from "@/convex/_generated/api";
 import { FavoriteButton } from "@/components/favorite-button";
 import { Stars } from "@/components/stars";
+import { StaySourceInfo } from "@/components/stay-source-info";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -151,7 +152,8 @@ export function PropertyDetail({
     );
   }
 
-  const { property, operator, reviews, isFavorite } = detail;
+  const { property, operator, reviews, isFavorite, sourceUrl } = detail;
+  const isDemo = property.policies.startsWith("Demo booking data:");
   const images = property.images.length > 0 ? property.images : [property.coverImage];
   const activeImage = images[Math.min(photoIndex, images.length - 1)];
   const minNights = selectedPlan?.minNights ?? 1;
@@ -198,6 +200,13 @@ export function PropertyDetail({
           <h1 className="mt-3 font-display text-4xl leading-[1.05] tracking-tight sm:text-5xl">
             {property.name}
           </h1>
+          {isDemo && (
+            <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950" role="note">
+              Demo listing: booking rates, room inventory and Tsvaga reviews are illustrative.
+              Only source-labelled information comes from property websites.
+              Confirm real availability and prices directly with the property.
+            </p>
+          )}
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <MapPinIcon className="size-3.5" />
@@ -267,6 +276,10 @@ export function PropertyDetail({
               {property.description}
             </p>
           </section>
+
+          {sourceUrl && (
+            <StaySourceInfo info={property.sourceInfo} sourceUrl={sourceUrl} name={property.name} />
+          )}
 
           <Separator className="my-8" />
 
@@ -400,7 +413,7 @@ export function PropertyDetail({
           <section>
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-display text-2xl">
-                Guest reviews
+                {isDemo ? "Tsvaga demo reviews" : "Tsvaga guest reviews"}
                 <span className="ml-2 text-sm font-normal text-muted-foreground">
                   {property.reviewCount} review
                   {property.reviewCount === 1 ? "" : "s"}
@@ -436,6 +449,7 @@ export function PropertyDetail({
 
         <aside id="book" className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border border-border/70 bg-card p-5 shadow-[var(--shadow-lift)]">
+            {isDemo && <p className="mb-3 text-xs font-semibold text-amber-700">Demo booking rate — not a live property offer</p>}
             <div className="flex items-end justify-between gap-2">
               <div>
                 <p className="text-2xl font-semibold leading-none">

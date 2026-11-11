@@ -16,6 +16,7 @@ import {
 import { slugify } from "./lib/slug";
 import { dateRange } from "./lib/dates";
 import { cheapestPlan, getStayQuote } from "./lib/stay";
+import { getStaySource } from "./lib/staySources";
 
 const FALLBACK_IMAGE =
   "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=1400&q=80";
@@ -276,6 +277,7 @@ export const getDetail = query({
       units: unitsWithPlans,
       reviews,
       isFavorite,
+      sourceUrl: getStaySource(property.slug)?.url ?? null,
     };
   },
 });

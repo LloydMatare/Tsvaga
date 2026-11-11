@@ -1,5 +1,9 @@
 # Welcome to your Convex + Next.js + Clerk app
 
+## Production deployment
+
+See [the production deployment runbook](docs/deployment.md) for environment variables, Clerk/Paynow/Resend setup, release commands, stay-source refresh activation, verification and rollback. Local development setup below is not a production deployment procedure.
+
 This is a [Convex](https://convex.dev/) project created with [`npm create convex`](https://www.npmjs.com/package/create-convex).
 
 After the initial setup (<2 minutes) you'll have a working full-stack app using:

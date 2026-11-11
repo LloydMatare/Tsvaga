@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "test": "vitest run",
     "dev": "convex dev --start 'next dev'",
     "typecheck": "tsc --noEmit",
     "build": "npm run typecheck && next build",
@@ -24,6 +25,7 @@
     "@radix-ui/react-separator": "^1.2.0",
     "@radix-ui/react-slot": "^1.5.0",
     "@radix-ui/react-tabs": "^1.2.1",
+    "cheerio": "^1.2.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "convex": "^1.49.0",
@@ -41,15 +43,18 @@
   },
   "devDependencies": {
     "@convex-dev/eslint-plugin": "^5.0.0",
+    "@edge-runtime/vm": "^5.0.0",
     "@tailwindcss/postcss": "^4.3.3",
     "@types/node": "^26.6.5",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
     "@typescript/native": "npm:typescript@^7.0.2",
+    "convex-test": "^0.0.69",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.3.0",
     "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
-    "typescript": "^6.0.3"
+    "typescript": "^6.0.3",
+    "vitest": "^5.1.0"
   }
 }
